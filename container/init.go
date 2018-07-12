@@ -35,7 +35,7 @@ func RunContainerInitProcess() error {
 		log.Errorf("Exec loop path error %v", err)
 		return err
 	}
-	log.Infof("Find \"%s\" path \"%s\"", cmdArray[0], path)
+	log.Infof("Find \"%s\" absoulte path \"%s\"", cmdArray[0], path)
 
 	// `os.syscall.Exec` invokes Linux execve(2) system call
 	//
@@ -97,6 +97,46 @@ func setUpMount() {
 	syscall.Mount("tmpfs", "/dev", "tmpfs", syscall.MS_NOSUID|syscall.MS_STRICTATIME, "mode=755")
 }
 
+// pivot_root() moves the root file system of the calling process to the directory
+// put_old and makes new_root the new root file system of the calling process.
+//
+// The typical use of pivot_root() is during system startup, when the system mounts
+// a temporary root file system (e.g., an initrd), then mounts the real root file
+// system, and eventually turns the latter into the current root of all relevant
+// processes or threads.
+
+// Try the following commands in a ubuntu-16.04-amd64 machine (not sure if other
+// system also work correctly).
+// 1. Make a mount point
+//    $ mkdir /ramroot
+// 2. Mount a memory filesystem (tmpfs) to /ramroot
+//    $ mount -n -t tmpfs -o size=256M none /ramroot
+// 3. Busybox is lite linux kernel. Copy all files under ~/busybox to /ramroot
+//    $ find ~/busybox -depth -xdev -print | cpio -pd --quiet /ramroot
+// 4. Create mount point in new filesystem for current root
+//    $ cd /ramroot
+//    $ mkdir oldrooot
+// 5. Pivot root (be sure you are the root user, otherwise busybox may not know
+//    who you are, `sudo su`)
+//    $ mount --make-rprivate / 			# necessay for pivot_root to work
+//    $ pivot_root . /oldroot
+// 6. Now you are in new root (busybox)
+// 7. Move system and temporary filesystem to the new root
+//    $ mount --move /oldroot/dev /dev
+//    $ mount --move /oldroot/run /run
+//    $ mount --move /oldroot/sys /sys
+//    $ mount --move /oldroot/proc /proc
+// 8. Try some commands to explore the new filesystem
+//    $ ls
+// 9. Pivot back to the old filesystem
+//    $ sh
+//    $ pivot_root /oldroot /oldroot/ramroot
+// 10. Mount back system and temp filesystem again
+//    $ mount --move /oldroot/dev /dev
+//    $ mount --move /oldroot/run /run
+//    $ mount --move /oldroot/sys /sys
+//    $ mount --move /oldroot/proc /proc
+
 func pivotRoot(root string) error {
 	/**
 	  为了使当前root的老 root 和新 root 不在同一个文件系统下，我们把root重新mount了一次
@@ -110,6 +150,7 @@ func pivotRoot(root string) error {
 	if err := os.Mkdir(pivotDir, 0777); err != nil {
 		return err
 	}
+
 	// pivot_root 到新的rootfs, 现在老的 old_root 是挂载在rootfs/.pivot_root
 	// 挂载点现在依然可以在mount命令中看到
 	if err := syscall.PivotRoot(root, pivotDir); err != nil {
