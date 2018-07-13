@@ -83,7 +83,7 @@ func setUpMount() {
 	log.Infof("Current location is %s", pwd)
 
 	// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-	// pivotRoot(pwd)
+	pivotRoot(pwd)
 
 	// Remount "/proc" to get accurate "top" && "ps" output
 	// Meaning of mount flags:
@@ -94,7 +94,12 @@ func setUpMount() {
 	syscall.Mount("proc", "/proc", "proc", uintptr(defaultMountFlags), "")
 
 	// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-	syscall.Mount("tmpfs", "/dev", "tmpfs", syscall.MS_NOSUID|syscall.MS_STRICTATIME, "mode=755")
+	if err := syscall.Mount("tmpfs", "/ramroot", "tmpfs", syscall.MS_NOSUID|syscall.MS_STRICTATIME, "mode=755"); err != nil {
+		log.Errorf("Mount tmpfs error: %v", err)
+		return
+	} else {
+		log.Infof("Mount tmpfs to `/ramroot` success.")
+	}
 }
 
 // pivot_root() moves the root file system of the calling process to the directory
@@ -112,7 +117,8 @@ func setUpMount() {
 // 2. Mount a memory filesystem (tmpfs) to /ramroot
 //    $ mount -n -t tmpfs -o size=256M none /ramroot
 // 3. Busybox is lite linux kernel. Copy all files under ~/busybox to /ramroot
-//    $ find ~/busybox -depth -xdev -print | cpio -pd --quiet /ramroot
+//    $ cd ~/busybox
+//    $ find . -depth -xdev -print | cpio -pd --quiet /ramroot
 // 4. Create mount point in new filesystem for current root
 //    $ cd /ramroot
 //    $ mkdir oldrooot
@@ -132,9 +138,9 @@ func setUpMount() {
 //    $ sh
 //    $ pivot_root /oldroot /oldroot/ramroot
 // 10. Mount back system and temp filesystem again
-//    $ mount --move /oldroot/dev /dev
-//    $ mount --move /oldroot/run /run
-//    $ mount --move /oldroot/sys /sys
+//    $ mount --move /oldroot/dev  /dev
+//    $ mount --move /oldroot/run  /run
+//    $ mount --move /oldroot/sys  /sys
 //    $ mount --move /oldroot/proc /proc
 
 func pivotRoot(root string) error {
@@ -144,12 +150,25 @@ func pivotRoot(root string) error {
 	*/
 	if err := syscall.Mount(root, root, "bind", syscall.MS_BIND|syscall.MS_REC, ""); err != nil {
 		return fmt.Errorf("Mount rootfs to itself error: %v", err)
+	} else {
+		log.Infof("Mount rootfs to itself success.")
+		log.Infof("Bind \"%s\" -> \"/\"", root)
 	}
+
 	// 创建 rootfs/.pivot_root 存储 old_root
 	pivotDir := filepath.Join(root, ".pivot_root")
 	if err := os.Mkdir(pivotDir, 0777); err != nil {
-		return err
+		if os.IsExist(err) {
+			log.Warnf(".pivot_root dir exist")
+		} else {
+			log.Error("Mkdir %s failed, with error %v", pivotDir, err)
+			return err
+		}
+	} else {
+		log.Infof("Mkdir %s", pivotDir)
 	}
+
+	return nil
 
 	// pivot_root 到新的rootfs, 现在老的 old_root 是挂载在rootfs/.pivot_root
 	// 挂载点现在依然可以在mount命令中看到
@@ -169,3 +188,10 @@ func pivotRoot(root string) error {
 	// 删除临时文件夹
 	return os.Remove(pivotDir)
 }
+
+// execve("./mydocker", ["./mydocker", "run", "-ti", "fish"], [/* 30 vars */]) = 0
+// clone(child_stack=0xc420046000, flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM) = 113
+// clone(child_stack=0xc420048000, flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM) = 114
+// clone(child_stack=0xc420044000, flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM) = 115
+// readlinkat(AT_FDCWD, "/proc/self/exe", "/home/yuechuan/mydocker/mydocker", 128) = 32
+// clone(child_stack=0, flags=CLONE_VM|CLONE_VFORK|CLONE_NEWNS|CLONE_NEWUTS|CLONE_NEWIPC|CLONE_NEWPID|CLONE_NEWNET|SIGCHLD) = 116
