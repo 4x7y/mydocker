@@ -17,25 +17,25 @@ import (
 // the system command like `ps` can read the process status.
 
 func RunContainerInitProcess() error {
+	log.Infof("Setup filesystem mount point")
+	setUpMount()
+
 	cmdArray := readUserCommand()
 	if cmdArray == nil || len(cmdArray) == 0 {
 		return fmt.Errorf("Run container get user command error, cmdArray is nil")
 	}
-	log.Infof("Get cmdArray: %v", cmdArray)
-
-	log.Infof("Setup mount point")
-	setUpMount()
-
+	log.Infof("Get: pipe -> %v", cmdArray)
 	// Since syscall.execve require absolute path of command, here we
 	// find command absolute path in system PATH env using exec.LookPath
 	// Example: fish -> /usr/bin/fish
 	// Example: ls   -> /bin/ls
+	log.Infof("Looking for %v absoulte path under container env $PATH", cmdArray)
 	path, err := exec.LookPath(cmdArray[0])
 	if err != nil {
 		log.Errorf("Exec loop path error %v", err)
 		return err
 	}
-	log.Infof("Find \"%s\" absoulte path \"%s\"", cmdArray[0], path)
+	log.Infof("\"%s\" -> \"%s\"", cmdArray[0], path)
 
 	// `os.syscall.Exec` invokes Linux execve(2) system call
 	//
@@ -43,9 +43,13 @@ func RunContainerInitProcess() error {
 	// the program that is currently being run by the calling process to be
 	// replaced with a new program, with newly initialized stack, heap, and
 	// (initialized and uninitialized) data segments.
+	log.Infof("$ exec %s -> %s (%s %s ...)", os.Args[0], path, os.Environ()[0], os.Environ()[2])
 	if err := syscall.Exec(path, cmdArray[0:], os.Environ()); err != nil {
 		log.Errorf(err.Error())
+	} else {
+		log.Infof("exec %s -> %s %v", os.Args[0], path, os.Environ())
 	}
+
 	return nil
 }
 
@@ -66,7 +70,7 @@ func readUserCommand() []string {
 	pipe := os.NewFile(uintptr(3), "pipe")
 	msg, err := ioutil.ReadAll(pipe)
 	if err != nil {
-		log.Errorf("init read pipe error %v", err)
+		log.Errorf("Init read pipe error %v", err)
 		return nil
 	}
 	msgStr := string(msg)
@@ -80,7 +84,7 @@ func setUpMount() {
 		log.Errorf("Get current location error %v", err)
 		return
 	}
-	log.Infof("Current location is %s", pwd)
+	log.Infof("$ pwd = %s", pwd)
 
 	// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 	pivotRoot(pwd)
@@ -91,14 +95,17 @@ func setUpMount() {
 	// MS_NOSUID: when process is running, do not allow set-user-ID or set-group-ID
 	// MS_NODEV:  default parameter since Linux 2.4
 	defaultMountFlags := syscall.MS_NOEXEC | syscall.MS_NOSUID | syscall.MS_NODEV
-	syscall.Mount("proc", "/proc", "proc", uintptr(defaultMountFlags), "")
+	if err := syscall.Mount("proc", "/proc", "proc", uintptr(defaultMountFlags), ""); err != nil {
+		log.Errorf("%v", err)
+	} else {
+		log.Infof("$ mount proc proc /proc")
+	}
 
-	// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-	if err := syscall.Mount("tmpfs", "/ramroot", "tmpfs", syscall.MS_NOSUID|syscall.MS_STRICTATIME, "mode=755"); err != nil {
+	if err := syscall.Mount("tmpfs", "/dev", "tmpfs", syscall.MS_NOSUID|syscall.MS_STRICTATIME, "mode=755"); err != nil {
 		log.Errorf("Mount tmpfs error: %v", err)
 		return
 	} else {
-		log.Infof("Mount tmpfs to `/ramroot` success.")
+		log.Infof("$ mount tmpfs tmpfs /dev -o nosuid,strictatime mode=755")
 	}
 }
 
@@ -144,15 +151,67 @@ func setUpMount() {
 //    $ mount --move /oldroot/proc /proc
 
 func pivotRoot(root string) error {
+
+	// Under Linux, bind mounts are available as a kernel feature. You can create one
+	// with the mount command, by passing either the `--bind` command line option or
+	// the bind mount option. The following two commands are equivalent:
+	//
+	// mount  --bind /a/dir /target/dir
+	// mount -o bind /a/dir /target/dir
+	//
+	// Here, the “device” /some/where is not a disk partition like in the case of an
+	// on-disk filesystem, but an existing directory. The mount point /else/where must
+	// be an existing directory as usual. Note that no filesystem type is specified
+	// either way: making a bind mount doesn't involve a filesystem driver, it copies
+	// the kernel data structures from the original mount.
+	//
+	// A Linux bind mount is mostly indistinguishable from the original. The command
+	//
+	// df -T /else/where shows the same device and the same filesystem type as
+	// df -T /some/where. The files /some/where/foo and /else/where/foo are
+	//
+	// indistinguishable, as if they were hard links. It is possible to unmount
+	// /some/where, in which case /else/where remains mounted.
+	//
+	// With older kernels (I don't know exactly when, I think until some 3.x), bind mounts
+	// were truly indistinguishable from the original. Recent kernels do track bind mounts
+	// and expose the information through PID/mountinfo, which allows findmnt to indicate
+	// bind mount as such.
+	//
+	// If there are mount points under /some/where, their contents are not visible under
+	// /else/where. Instead of bind, you can use rbind, also replicate mount points underneath
+	// /some/where. For example, if /some/where/mnt is a mount point then
+	//
+	// mount --rbind /some/where /else/where
+	//
+	// is equivalent to
+	//
+	// mount --bind /some/where /else/where
+	// mount --bind /some/where/mnt /else/where/mnt
+	//
+	// In addition, Linux allows mounts to be declared as shared, slave, private or unbindable.
+	// This affects whether that mount operation is reflected under a bind mount that replicates
+	// the mount point. For more details, see the kernel documentation.
+	//
+	// Linux also provides a way to move mounts: where --bind copies, --move moves a mount point.
+	//
+	// It is possible to have different mount options in two bind-mounted directories. There is a
+	// quirk, however: making the bind mount and setting the mount options cannot be done atomically,
+	// they have to be two successive operations. (Older kernels did not allow this.) For example,
+	// the following commands create a read-only view, but there is a small window of time during
+	// which /else/where is read-write:
+	//
+	// mount --bind /some/where /else/where
+	// mount -o remount,ro,bind /else/where
+
 	/**
-	  为了使当前root的老 root 和新 root 不在同一个文件系统下，我们把root重新mount了一次
+	  为了使当前root的老 root 和新 root 不在同一个文件系统下，我们把root重新 mount 了一次
 	  bind mount是把相同的内容换了一个挂载点的挂载方法
 	*/
 	if err := syscall.Mount(root, root, "bind", syscall.MS_BIND|syscall.MS_REC, ""); err != nil {
 		return fmt.Errorf("Mount rootfs to itself error: %v", err)
 	} else {
-		log.Infof("Mount rootfs to itself success.")
-		log.Infof("Bind \"%s\" -> \"/\"", root)
+		log.Infof("$ mount --bind %s /", root)
 	}
 
 	// 创建 rootfs/.pivot_root 存储 old_root
@@ -165,28 +224,47 @@ func pivotRoot(root string) error {
 			return err
 		}
 	} else {
-		log.Infof("Mkdir %s", pivotDir)
+		log.Infof("$ mkdir %s", pivotDir)
 	}
 
-	return nil
+	if err := syscall.Mount("none", "/", "", syscall.MS_REC|syscall.MS_PRIVATE, ""); err != nil {
+		log.Errorf("Command Failed: mount --make-rprivate /")
+		return err
+	} else {
+		log.Infof("$ mount --make-rprivate /")
+	}
 
 	// pivot_root 到新的rootfs, 现在老的 old_root 是挂载在rootfs/.pivot_root
 	// 挂载点现在依然可以在mount命令中看到
 	if err := syscall.PivotRoot(root, pivotDir); err != nil {
 		return fmt.Errorf("pivot_root %v", err)
+	} else {
+		log.Infof("$ pivot_root %s %s", root, pivotDir)
 	}
-	// 修改当前的工作目录到根目录
+
+	// Change current work dir to root
 	if err := syscall.Chdir("/"); err != nil {
-		return fmt.Errorf("chdir / %v", err)
+		return fmt.Errorf("\"cd / \": %v", err)
+	} else {
+		log.Infof("$ cd /")
 	}
 
 	pivotDir = filepath.Join("/", ".pivot_root")
 	// umount rootfs/.pivot_root
 	if err := syscall.Unmount(pivotDir, syscall.MNT_DETACH); err != nil {
 		return fmt.Errorf("unmount pivot_root dir %v", err)
+	} else {
+		log.Infof("$ umount %s", pivotDir)
 	}
-	// 删除临时文件夹
-	return os.Remove(pivotDir)
+
+	// Delete temporary directory
+	if err := os.Remove(pivotDir); err != nil {
+		return fmt.Errorf("remove pivotDir %v", err)
+	} else {
+		log.Infof("$ rmdir %s", pivotDir)
+	}
+
+	return nil
 }
 
 // execve("./mydocker", ["./mydocker", "run", "-ti", "fish"], [/* 30 vars */]) = 0

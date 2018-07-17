@@ -10,12 +10,17 @@ import (
 	"syscall"
 )
 
-func Run(tty bool, comArray []string, res *subsystems.ResourceConfig) {
+// func Run(tty bool, comArray []string, res *subsystems.ResourceConfig) {
+
+func Run(tty bool, comArray []string, volume string, res *subsystems.ResourceConfig) {
 	// Refer to source code container_process.go
 	// `parent` is a `Cmd` struct which contains exe path, args, etc.
 	// Commands that going to be executed by the new child process
 	// is now passed through a pipe.
-	parent, writePipe := container.NewParentProcess(tty)
+
+	mntURL := "/root/mnt"
+	rootURL := "/root"
+	parent, writePipe := container.NewParentProcess(tty, volume, rootURL, mntURL)
 	if parent == nil {
 		log.Errorf("New parent process error")
 		return
@@ -29,12 +34,6 @@ func Run(tty bool, comArray []string, res *subsystems.ResourceConfig) {
 	}
 	// Use mydocker-cgroup as cgroup name
 	cgroupManager := cgroups.NewCgroupManager("mydocker-cgroup")
-	// Destroy cgroupManager after exit of current function
-	defer log.Infof("destroy cgroup")
-	defer cgroupManager.Destroy()
-	defer log.Infof("remount /proc")
-	defer syscall.Mount("proc", "/proc", "proc",
-		uintptr(syscall.MS_NOEXEC|syscall.MS_NOSUID|syscall.MS_NODEV), "")
 
 	cgroupManager.Set(res)
 	cgroupManager.Apply(parent.Process.Pid)
@@ -47,11 +46,21 @@ func Run(tty bool, comArray []string, res *subsystems.ResourceConfig) {
 	// from stdout or stderr to complete.
 	// Also, `Wait` releases any resources assoicated with the `parent`
 	parent.Wait()
+
+	// Tear down
+	container.DeleteWorkSpace(rootURL, mntURL, volume)
+	syscall.Mount("proc", "/proc", "proc",
+		uintptr(syscall.MS_NOEXEC|syscall.MS_NOSUID|syscall.MS_NODEV), "")
+	log.Infof("$ mount proc proc /proc")
+	cgroupManager.Destroy()
+	log.Infof("destroy cgroup")
+
+	os.Exit(0)
 }
 
 func sendInitCommand(comArray []string, writePipe *os.File) {
 	command := strings.Join(comArray, " ")
-	log.Infof("command all is \"%s\"", command)
+	log.Infof("Send: [%s] -> pipe", command)
 	writePipe.WriteString(command)
 	writePipe.Close()
 }

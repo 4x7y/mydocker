@@ -34,6 +34,10 @@ var runCommand = cli.Command{
 			Name:  "cpuset",
 			Usage: "cpuset limit",
 		},
+		cli.StringFlag{
+			Name:  "v",
+			Usage: "volume",
+		},
 	},
 
 	// 1. check if parameters include `command`
@@ -53,20 +57,19 @@ var runCommand = cli.Command{
 
 		// Check if argument `ti` is specified
 		tty := context.Bool("ti")
-
 		resConf := &subsystems.ResourceConfig{
 			MemoryLimit: context.String("m"),
 			CpuSet:      context.String("cpuset"),
 			CpuShare:    context.String("cpushare"),
 		}
-
+		volume := context.String("v")
 		log.Infof("Run a new process (tty=%v cmdArray=%v resConf=%v)",
 			tty, cmdArray, resConf)
 		// Refer to file: run.go
 		// Wait here until `cmd` exit
 		// The `NewParentProcess` invoked in `Run` promise
 		// new container process execute `initCommand` after start
-		Run(tty, cmdArray, resConf)
+		Run(tty, cmdArray, volume, resConf)
 
 		return nil
 	},

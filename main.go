@@ -1,6 +1,7 @@
 package main
 
 import (
+	"../mydocker/misc"
 	"github.com/onrik/logrus/filename"
 	log "github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
@@ -23,11 +24,18 @@ func main() {
 	}
 
 	app.Before = func(context *cli.Context) error {
-		log.AddHook(filename.NewHook())
-		// Log as JSON instead of the default ASCII formatter.
-		log.SetFormatter(&log.TextFormatter{})
 
+		// Setup logger
+		log.AddHook(filename.NewHook())
+		log.AddHook(misc.NewHook())
+		var textFormatter = new(log.TextFormatter)
+		// textFormatter.TimestampFormat = "15:04:05"
+		// textFormatter.FullTimestamp = true
+		textFormatter.ForceColors = true
+		textFormatter.DisableTimestamp = true
+		log.SetFormatter(textFormatter)
 		log.SetOutput(os.Stdout)
+
 		return nil
 	}
 
