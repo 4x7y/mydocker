@@ -2,6 +2,7 @@ package subsystems
 
 import (
 	"fmt"
+	log "github.com/sirupsen/logrus"
 	"io/ioutil"
 	"os"
 	"path"
@@ -13,9 +14,12 @@ type CpuSubSystem struct {
 
 func (s *CpuSubSystem) Set(cgroupPath string, res *ResourceConfig) error {
 	if subsysCgroupPath, err := GetCgroupPath(s.Name(), cgroupPath, true); err == nil {
+		log.Infof("CpushareSubSystem CGroup Path: %s", subsysCgroupPath)
 		if res.CpuShare != "" {
 			if err := ioutil.WriteFile(path.Join(subsysCgroupPath, "cpu.shares"), []byte(res.CpuShare), 0644); err != nil {
 				return fmt.Errorf("set cgroup cpu share fail %v", err)
+			} else {
+				log.Infof("$ echo \"%s\" > %s", res.CpuShare, subsysCgroupPath+"/cpu.shares")
 			}
 		}
 		return nil
@@ -26,6 +30,7 @@ func (s *CpuSubSystem) Set(cgroupPath string, res *ResourceConfig) error {
 
 func (s *CpuSubSystem) Remove(cgroupPath string) error {
 	if subsysCgroupPath, err := GetCgroupPath(s.Name(), cgroupPath, false); err == nil {
+		log.Infof("$ rm -rf %s", subsysCgroupPath)
 		return os.RemoveAll(subsysCgroupPath)
 	} else {
 		return err

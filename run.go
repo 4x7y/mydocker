@@ -33,8 +33,8 @@ func Run(tty bool, comArray []string, volume string, res *subsystems.ResourceCon
 		log.Error(err)
 	}
 	// Use mydocker-cgroup as cgroup name
-	cgroupManager := cgroups.NewCgroupManager("mydocker-cgroup")
-
+	log.Infof("Configuring cgroup ...")
+	cgroupManager := cgroups.NewCgroupManager("mydocker")
 	cgroupManager.Set(res)
 	cgroupManager.Apply(parent.Process.Pid)
 
@@ -52,8 +52,9 @@ func Run(tty bool, comArray []string, volume string, res *subsystems.ResourceCon
 	syscall.Mount("proc", "/proc", "proc",
 		uintptr(syscall.MS_NOEXEC|syscall.MS_NOSUID|syscall.MS_NODEV), "")
 	log.Infof("$ mount proc proc /proc")
+
+	log.Infof("CGroups Destroy ...")
 	cgroupManager.Destroy()
-	log.Infof("destroy cgroup")
 
 	os.Exit(0)
 }
