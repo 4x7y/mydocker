@@ -1,12 +1,31 @@
 package container
 
 import (
+	"fmt"
 	log "github.com/sirupsen/logrus"
 	"os"
 	"os/exec"
 	"strings"
 	"syscall"
 )
+
+var (
+	RUNNING             string = "running"
+	STOP                string = "stopped"
+	Exit                string = "exited"
+	DefaultInfoLocation string = "/var/run/mydocker/%s/"
+	ConfigName          string = "config.json"
+	ContainerLogFile    string = "container.log"
+)
+
+type ContainerInfo struct {
+	Pid         string `json:"pid"`        // Conainter init process PID on host sys
+	Id          string `json:"id"`         // Container ID
+	Name        string `json:"name"`       // Container name
+	Command     string `json:"command"`    // Command to be executed by init action
+	CreatedTime string `json:"createTime"` // Create time
+	Status      string `json:"status"`     // Container status
+}
 
 // create namespace isolated process os.exec.Cmd struct
 // type Cmd struct {
@@ -23,7 +42,7 @@ import (
 ///  ...            ...
 // }
 
-func NewParentProcess(tty bool, volume, rootURL, mntURL string) (*exec.Cmd, *os.File) {
+func NewParentProcess(tty bool, volume, rootURL, mntURL, containerName string) (*exec.Cmd, *os.File) {
 	// NewParentProcess will fork a new process with argument `init`
 	//
 	// PID  COMMAND
@@ -58,7 +77,31 @@ func NewParentProcess(tty bool, volume, rootURL, mntURL string) (*exec.Cmd, *os.
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
+	} else {
+		// DETACH MODE
+		// Create log directory
+		dirURL := fmt.Sprintf(DefaultInfoLocation, containerName)
+		if err := os.MkdirAll(dirURL, 0622); err != nil {
+			log.Warnf("$ %v", err)
+		} else {
+			log.Infof("$ mkdir -p %s -m 0622", dirURL)
+		}
+
+		// Create log file
+		stdLogFilePath := dirURL + ContainerLogFile
+		stdLogFile, err := os.Create(stdLogFilePath)
+		if err != nil {
+			log.Errorf("%v", err)
+
+			return nil, nil
+		} else {
+			log.Infof("$ touch %s", stdLogFilePath)
+		}
+
+		cmd.Stdout = stdLogFile
+		log.Infof("cmd.stdout > container.logfile")
 	}
+
 	cmd.ExtraFiles = []*os.File{readPipe}
 	log.Infof("Cloneflag: UTS|PID|NS(MNT)|NET|IPC")
 
@@ -95,7 +138,7 @@ func CreateReadOnlyLayer(rootURL string) {
 	}
 	if busybox_dir_exist == false {
 		if err := os.Mkdir(busyboxURL, 0777); err != nil {
-			log.Errorf("Mkdir busybox dir %s error. %v", busyboxURL, err)
+			log.Warnf("$ %v", err)
 		} else {
 			log.Infof("$ mkdir %s -m 0777", busyboxURL)
 		}
@@ -111,7 +154,7 @@ func CreateReadOnlyLayer(rootURL string) {
 func CreateWriteLayer(rootURL string) {
 	writeURL := rootURL + "/writeLayer"
 	if err := os.Mkdir(writeURL, 0777); err != nil {
-		log.Infof("Mkdir write layer dir %s error. %v", writeURL, err)
+		log.Warnf("$ %v", err)
 	} else {
 		log.Infof("$ mkdir %s -m 0777", writeURL)
 	}
@@ -130,7 +173,7 @@ func MountVolume(rootURL string, mntURL string, volumeURLs []string) {
 		log.Errorf("%v", err)
 	}
 	if exist {
-		log.Infof("$ mkdir %s -m 0777 (cannot create dir: File exists)", parentUrl)
+		log.Infof("$ mkdir %s -m 0777 (File exists)", parentUrl)
 	} else {
 		if err := os.Mkdir(parentUrl, 0777); err != nil {
 			log.Errorf("%v", parentUrl, err)
@@ -209,10 +252,6 @@ func DeleteMountPoint(rootURL string, mntURL string) {
 	// 	log.Errorf("%v", err)
 	// }
 
-	// Issue: Have to unmount aufs twice
-	if err := syscall.Unmount(mntURL, syscall.MNT_FORCE); err != nil {
-		log.Errorf("%v", err)
-	}
 	if err := syscall.Unmount(mntURL, syscall.MNT_FORCE); err != nil {
 		log.Errorf("%v", err)
 	} else {
@@ -250,9 +289,6 @@ func DeleteMountPointWithVolume(rootURL string, mntURL string, volumeURLs []stri
 	// } else {
 	// 	log.Infof("umount %s", mntURL)
 	// }
-	if err := syscall.Unmount(mntURL, syscall.MNT_DETACH); err != nil {
-		log.Errorf("%v", err)
-	}
 	if err := syscall.Unmount(mntURL, syscall.MNT_DETACH); err != nil {
 		log.Errorf("%v", err)
 	} else {

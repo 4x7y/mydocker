@@ -29,7 +29,7 @@ func RunContainerInitProcess() error {
 	// find command absolute path in system PATH env using exec.LookPath
 	// Example: fish -> /usr/bin/fish
 	// Example: ls   -> /bin/ls
-	log.Infof("Looking for %v absoulte path under container env $PATH", cmdArray)
+	log.Infof("Looking for %s absoulte path under container env $PATH", cmdArray[0])
 	path, err := exec.LookPath(cmdArray[0])
 	if err != nil {
 		log.Errorf("Exec loop path error %v", err)
@@ -46,8 +46,6 @@ func RunContainerInitProcess() error {
 	log.Infof("$ exec %s -> %s (%s %s ...)", os.Args[0], path, os.Environ()[0], os.Environ()[2])
 	if err := syscall.Exec(path, cmdArray[0:], os.Environ()); err != nil {
 		log.Errorf(err.Error())
-	} else {
-		log.Infof("exec %s -> %s %v", os.Args[0], path, os.Environ())
 	}
 
 	return nil
@@ -86,7 +84,6 @@ func setUpMount() {
 	}
 	log.Infof("$ pwd = %s", pwd)
 
-	// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 	pivotRoot(pwd)
 
 	// Remount "/proc" to get accurate "top" && "ps" output
@@ -204,6 +201,13 @@ func pivotRoot(root string) error {
 	// mount --bind /some/where /else/where
 	// mount -o remount,ro,bind /else/where
 
+	if err := syscall.Mount("none", "/", "", syscall.MS_REC|syscall.MS_PRIVATE, ""); err != nil {
+		log.Errorf("Command Failed: mount --make-rprivate /")
+		return err
+	} else {
+		log.Infof("$ mount --make-rprivate /")
+	}
+
 	/**
 	  为了使当前root的老 root 和新 root 不在同一个文件系统下，我们把root重新 mount 了一次
 	  bind mount是把相同的内容换了一个挂载点的挂载方法
@@ -225,13 +229,6 @@ func pivotRoot(root string) error {
 		}
 	} else {
 		log.Infof("$ mkdir %s", pivotDir)
-	}
-
-	if err := syscall.Mount("none", "/", "", syscall.MS_REC|syscall.MS_PRIVATE, ""); err != nil {
-		log.Errorf("Command Failed: mount --make-rprivate /")
-		return err
-	} else {
-		log.Infof("$ mount --make-rprivate /")
 	}
 
 	// pivot_root 到新的rootfs, 现在老的 old_root 是挂载在rootfs/.pivot_root

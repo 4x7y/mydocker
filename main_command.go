@@ -6,6 +6,7 @@ import (
 	"fmt"
 	log "github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
+	"os"
 )
 
 // This file defines two basic mydocker commands, including
@@ -15,8 +16,12 @@ import (
 // $ sudo mydocker run -ti /bin/sh
 var runCommand = cli.Command{
 	Name: "run",
-	Usage: `Create a container with namespace and cgroups limit
-			mydocker run -ti [command]`,
+	Usage: `Create a container with namespace and cgroups limit,
+	-d and -ti cannot be used together
+		mydocker run -ti [command]
+		mydocker run -d --name [container name] [command]
+		mydocker run --cpushare [250] --cpuset [1] -m [128m] [command]
+		mydocker run -v [parent_url:container_url] [command]`,
 	Flags: []cli.Flag{
 		cli.BoolFlag{
 			Name:  "ti",
@@ -42,6 +47,10 @@ var runCommand = cli.Command{
 			Name:  "d",
 			Usage: "detach container",
 		},
+		cli.StringFlag{
+			Name:  "name",
+			Usage: "container name",
+		},
 	},
 
 	// 1. check if parameters include `command`
@@ -63,7 +72,7 @@ var runCommand = cli.Command{
 		ttyEnable := context.Bool("ti")
 		detachEnable := context.Bool("d")
 		if ttyEnable && detachEnable {
-			return fmt.Errorf("ti and d parameter cannot both provided")
+			return fmt.Errorf("-ti and -d parameter cannot both provided")
 		}
 
 		resConf := &subsystems.ResourceConfig{
@@ -72,6 +81,7 @@ var runCommand = cli.Command{
 			CpuShare:    context.String("cpushare"),
 		}
 		volumePaths := context.String("v")
+		containerName := context.String("name")
 
 		log.Infof("Run a new process (tty=%v cmdArray=%v resConf=%v)",
 			ttyEnable, cmdArray, resConf)
@@ -79,7 +89,7 @@ var runCommand = cli.Command{
 		// Wait here until `cmd` exit
 		// The `NewParentProcess` invoked in `Run` promise
 		// new container process execute `initCommand` after start
-		Run(ttyEnable, cmdArray, volumePaths, resConf)
+		Run(ttyEnable, cmdArray, volumePaths, resConf, containerName)
 
 		return nil
 	},
@@ -95,10 +105,6 @@ var initCommand = cli.Command{
 	Action: func(context *cli.Context) error {
 		log.Infof("Init action come on")
 
-		// Print out the argument of the command, for example /bin/sh
-		// cmd := context.Args().Get(0)
-		// log.Infof("Init command: %s", cmd)
-
 		// Run containerInitProcess
 		// Refer to file: conainer/init.go
 		err := container.RunContainerInitProcess()
@@ -107,8 +113,9 @@ var initCommand = cli.Command{
 }
 
 var commitCommand = cli.Command{
-	Name:  "commit",
-	Usage: "commit a container into image",
+	Name: "commit",
+	Usage: `commit a container into image
+		mydocker commit [image name]`,
 	Action: func(context *cli.Context) error {
 
 		if len(context.Args()) < 1 {
@@ -116,6 +123,56 @@ var commitCommand = cli.Command{
 		}
 		imageName := context.Args().Get(0)
 		commitContainer(imageName)
+		return nil
+	},
+}
+
+var listCommand = cli.Command{
+	Name: "ps",
+	Usage: `list all the containers
+		mydocker ps`,
+	Action: func(context *cli.Context) error {
+		ListContainers()
+		return nil
+	},
+}
+
+var logCommand = cli.Command{
+	Name: "logs",
+	Usage: `print logs of a container
+		mydocker logs`,
+	Action: func(context *cli.Context) error {
+		if len(context.Args()) < 1 {
+			return fmt.Errorf("Please input your container name")
+		}
+		containerName := context.Args().Get(0)
+		logContainer(containerName)
+		return nil
+	},
+}
+
+var execCommand = cli.Command{
+	Name: "exec",
+	Usage: `exec a command into container
+		mydocker exec [container name] [command]`,
+	Action: func(context *cli.Context) error {
+		// This is for callback
+		// For the second time exec, ENV_EXEC_PID is set already
+		// just jump over the following code
+		if os.Getenv(ENV_EXEC_PID) != "" {
+			log.Infof("pid callback pid %s", os.Getgid())
+			return nil
+		}
+
+		if len(context.Args()) < 2 {
+			return fmt.Errorf("Missing container name or command")
+		}
+		containerName := context.Args().Get(0)
+		var commandArray []string
+		for _, arg := range context.Args().Tail() {
+			commandArray = append(commandArray, arg)
+		}
+		ExecContainer(containerName, commandArray)
 		return nil
 	},
 }
