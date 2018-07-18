@@ -117,6 +117,12 @@ func CreateWriteLayer(rootURL string) {
 	}
 }
 
+// Volumes provide the best and most predictable performance for write-heavy workloads.
+// This is because they bypass the storage driver and do not incur any of the potential
+// overheads introduced by thin provisioning and copy-on-write. Volumes have other
+// benefits, such as allowing you to share data among containers and persisting even
+// when no running container is using them.
+
 func MountVolume(rootURL string, mntURL string, volumeURLs []string) {
 	parentUrl := volumeURLs[0]
 	exist, err := PathExists(parentUrl)
@@ -124,7 +130,7 @@ func MountVolume(rootURL string, mntURL string, volumeURLs []string) {
 		log.Errorf("%v", err)
 	}
 	if exist {
-		log.Infof("Find parentUrl \"%s\" exist", parentUrl)
+		log.Infof("$ mkdir %s -m 0777 (cannot create dir: File exists)", parentUrl)
 	} else {
 		if err := os.Mkdir(parentUrl, 0777); err != nil {
 			log.Errorf("%v", parentUrl, err)
@@ -151,7 +157,7 @@ func MountVolume(rootURL string, mntURL string, volumeURLs []string) {
 		log.Errorf("Mount volume failed. %v", err)
 	} else {
 		log.Infof("$ mount -t aufs -o %s none %s", dirs, containerVolumeURL)
-		log.Infof("AUFS note: %s rw:ro -> %s", parentUrl, containerVolumeURL)
+		log.Infof("AUFS: %s[rw] -> %s[aufs]", parentUrl, containerVolumeURL)
 	}
 
 }
@@ -171,7 +177,7 @@ func CreateMountPoint(rootURL string, mntURL string) error {
 		log.Errorf("Mount mountpoint dir failed. %v", err)
 	} else {
 		log.Infof("$ mount -t aufs -o %s none %s", dirs, mntURL)
-		log.Infof("AUFS note: %s[rw], %s[ro] -> %s[aufs]", rootURL+"/writeLayer", rootURL+"/busybox", mntURL)
+		log.Infof("AUFS: %s[rw], %s[ro] -> %s[aufs]", rootURL+"/writeLayer", rootURL+"/busybox", mntURL)
 	}
 
 	return nil
@@ -256,7 +262,7 @@ func DeleteMountPointWithVolume(rootURL string, mntURL string, volumeURLs []stri
 	if err := os.RemoveAll(mntURL); err != nil {
 		log.Errorf("Remove mountpoint dir %s error %v", mntURL, err)
 	} else {
-		log.Infof("rm -rf %s", mntURL)
+		log.Infof("$ rm -rf %s", mntURL)
 	}
 }
 
@@ -265,7 +271,7 @@ func DeleteWriteLayer(rootURL string) {
 	if err := os.RemoveAll(writeURL); err != nil {
 		log.Errorf("Remove writeLayer dir %s error %v", writeURL, err)
 	} else {
-		log.Infof("rm -rf %s", writeURL)
+		log.Infof("$ rm -rf %s", writeURL)
 	}
 }
 
