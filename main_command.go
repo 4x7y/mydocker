@@ -97,8 +97,9 @@ var runCommand = cli.Command{
 
 // This command is invoked by child process
 var initCommand = cli.Command{
-	Name:  "init",
-	Usage: "Init container process run user's process in container. Do not call it outside",
+	Name: "init",
+	Usage: `Init container process run user's process in container. 
+	Do not call it outside`,
 
 	// 1. get passed command parameters (use pipe instead)
 	// 2. initialize container
@@ -140,7 +141,7 @@ var listCommand = cli.Command{
 var logCommand = cli.Command{
 	Name: "logs",
 	Usage: `print logs of a container
-		mydocker logs`,
+		mydocker logs [container name]`,
 	Action: func(context *cli.Context) error {
 		if len(context.Args()) < 1 {
 			return fmt.Errorf("Please input your container name")
@@ -160,7 +161,7 @@ var execCommand = cli.Command{
 		// For the second time exec, ENV_EXEC_PID is set already
 		// just jump over the following code
 		if os.Getenv(ENV_EXEC_PID) != "" {
-			log.Infof("pid callback pid %s", os.Getgid())
+			log.Infof("pid callback pid %s", os.Getpid())
 			return nil
 		}
 
@@ -173,6 +174,20 @@ var execCommand = cli.Command{
 			commandArray = append(commandArray, arg)
 		}
 		ExecContainer(containerName, commandArray)
+		return nil
+	},
+}
+
+var stopCommand = cli.Command{
+	Name: "stop",
+	Usage: `stop a container
+		mydocker stop [container name]`,
+	Action: func(context *cli.Context) error {
+		if len(context.Args()) < 1 {
+			return fmt.Errorf("Missing container name")
+		}
+		containerName := context.Args().Get(0)
+		stopContainer(containerName)
 		return nil
 	},
 }
