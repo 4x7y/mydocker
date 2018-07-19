@@ -3,14 +3,12 @@ package main
 import (
 	"../mydocker/cgroups/subsystems"
 	"../mydocker/container"
+	"../mydocker/network"
 	"fmt"
 	log "github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 	"os"
 )
-
-// This file defines two basic mydocker commands, including
-// runCommand and intiCommand,
 
 // To start a container:
 // $ sudo mydocker run -ti /bin/sh
@@ -59,51 +57,59 @@ var runCommand = cli.Command{
 			Name:  "e",
 			Usage: "set environment",
 		},
+		cli.StringFlag{
+			Name:  "net",
+			Usage: "container network",
+		},
+		cli.StringSliceFlag{
+			Name:  "p",
+			Usage: "port mapping",
+		},
 	},
 
 	// 1. check if parameters include `command`
 	// 2. get user specified command
 	// 3. call `run` function to prepare for container setup
 	Action: func(context *cli.Context) error {
-		// Assert that command must have at least one args
-		// $ mydocker run ...
+		// Assert that command must have at least one arg
 		if len(context.Args()) < 1 {
 			return fmt.Errorf("Missing container command")
 		}
 
+		// Setup user specified container configuration
 		var cmdArray []string
 		for _, arg := range context.Args() {
 			cmdArray = append(cmdArray, arg)
 		}
-		//get image name
-		imageName := cmdArray[0]
-		cmdArray = cmdArray[1:]
-
-		// Handle arguments
-		ttyEnable := context.Bool("ti")
-		detachEnable := context.Bool("d")
-		if ttyEnable && detachEnable {
-			return fmt.Errorf("-ti and -d parameter cannot both provided")
+		config := &container.ContainerConfig{
+			TTY:         context.Bool("ti") || !context.Bool("d"),
+			Env:         context.StringSlice("e"),
+			Name:        context.String("name"),
+			ID:          randStringBytes(10),
+			Volume:      context.String("v"),
+			Pipe:        nil,
+			ImageName:   cmdArray[0],
+			CmdArray:    cmdArray[1:],
+			Network:     context.String("net"),
+			PortMapping: context.StringSlice("p"),
+			Resource: &subsystems.ResourceConfig{
+				MemoryLimit: context.String("m"),
+				CpuSet:      context.String("cpuset"),
+				CpuShare:    context.String("cpushare"),
+			},
+		}
+		// Let default name to be container ID
+		if config.Name == "" {
+			config.Name = config.ID
 		}
 
-		resConf := &subsystems.ResourceConfig{
-			MemoryLimit: context.String("m"),
-			CpuSet:      context.String("cpuset"),
-			CpuShare:    context.String("cpushare"),
-		}
-		volumePaths := context.String("v")
-		envSlice := context.StringSlice("e")
-		containerName := context.String("name")
-
-		log.Infof("Container config = {tty=%v, cmdArray=%v ...}",
-			ttyEnable, cmdArray)
 		// Refer to file: run.go
 		// Wait here until `cmd` exit
-		// The `NewParentProcess` invoked in `Run` promise
-		// new container process execute `initCommand` after start
+		// The `NewParentProcess` invoked in `Run` promise new container
+		// process execute `initCommand` after start
+		Run(config)
 
-		Run(ttyEnable, cmdArray, resConf, containerName, volumePaths, imageName, envSlice)
-
+		// Exit mydocker process
 		log.Info("Exit.")
 		return nil
 	},
@@ -217,5 +223,65 @@ var removeCommand = cli.Command{
 		containerName := context.Args().Get(0)
 		removeContainer(containerName)
 		return nil
+	},
+}
+
+var networkCommand = cli.Command{
+	Name: "network",
+	Usage: `container network commands
+		mydocker network create [network name] --driver [driver] --subnet [subnet]
+		mydocker network list
+		mydocker network remove [network name]`,
+	Subcommands: []cli.Command{
+		{
+			Name:  "create",
+			Usage: "create a container network",
+			Flags: []cli.Flag{
+				cli.StringFlag{
+					Name:  "driver",
+					Usage: "network driver",
+				},
+				cli.StringFlag{
+					Name:  "subnet",
+					Usage: "subnet cidr",
+				},
+			},
+
+			Action: func(context *cli.Context) error {
+				if len(context.Args()) < 1 {
+					return fmt.Errorf("Missing network name")
+				}
+				network.Init()
+				err := network.CreateNetwork(context.String("driver"), context.String("subnet"), context.Args()[0])
+				if err != nil {
+					return err
+				}
+				return nil
+			},
+		},
+		{
+			Name:  "list",
+			Usage: "list container network",
+			Action: func(context *cli.Context) error {
+				network.Init()
+				network.ListNetwork()
+				return nil
+			},
+		},
+		{
+			Name:  "remove",
+			Usage: "remove container network",
+			Action: func(context *cli.Context) error {
+				if len(context.Args()) < 1 {
+					return fmt.Errorf("Missing network name")
+				}
+				network.Init()
+				err := network.DeleteNetwork(context.Args()[0])
+				if err != nil {
+					return err
+				}
+				return nil
+			},
+		},
 	},
 }

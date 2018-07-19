@@ -2,12 +2,11 @@ package main
 
 import (
 	"../mydocker/cgroups"
-	"../mydocker/cgroups/subsystems"
 	"../mydocker/container"
+	"../mydocker/network"
 	"encoding/json"
 	"fmt"
 	log "github.com/sirupsen/logrus"
-	"math/rand"
 	"os"
 	"strconv"
 	"strings"
@@ -17,16 +16,16 @@ import (
 
 // func Run(tty bool, comArray []string, res *subsystems.ResourceConfig) {
 
-func Run(tty bool, comArray []string, res *subsystems.ResourceConfig, containerName, volume, imageName string, envSlice []string) {
+func Run(config *container.ContainerConfig) {
 	// Refer to source code container_process.go
-	// `parent` is a `Cmd` struct which contains exe path, args, etc.
+	// `containerProcess` is a `Cmd` struct which contains exe path, args, etc.
 	// Commands that going to be executed by the new child process
 	// is now passed through a pipe.
-
 	log.Infof("Prepare container process ...")
-	parent, writePipe := container.NewParentProcess(tty, containerName, volume, imageName, envSlice)
-	if parent == nil {
-		log.Errorf("New parent process error")
+	containerProcess, writePipe := container.NewParentProcess(
+		config.TTY, config.Name, config.Volume, config.ImageName, config.Env)
+	if containerProcess == nil {
+		log.Errorf("New containerProcess process error")
 		return
 	}
 	log.Info("Done.")
@@ -34,17 +33,19 @@ func Run(tty bool, comArray []string, res *subsystems.ResourceConfig, containerN
 	// Starts the specified command but does not wait for it to complete
 	// Equivalent: "/fork/exec /proc/self/exe init /bin/sh"
 	// That is, "/fork/exec mydocker init /bin/sh"
-	if err := parent.Start(); err != nil {
+	if err := containerProcess.Start(); err != nil {
 		log.Error(err)
 	}
-	log.Infof("$ fork %s %s (child process pid=%d)", parent.Args[0], parent.Args[1], parent.Process.Pid)
+	log.Infof("$ fork %s %s (child process pid=%d)",
+		containerProcess.Args[0], containerProcess.Args[1], containerProcess.Process.Pid)
 
 	// Now container is running ...
 
 	// Record container process info
 	log.Infof("Record container info ...")
-	containerName, err := recordContainerInfo(parent.Process.Pid, comArray, containerName)
-	if err != nil {
+	containerPid := containerProcess.Process.Pid
+	runtimeInfo := makeContainerInfo(containerPid, config)
+	if err := recordContainerInfo(runtimeInfo); err != nil {
 		log.Errorf("Record container info error %v", err)
 		return
 	}
@@ -52,24 +53,33 @@ func Run(tty bool, comArray []string, res *subsystems.ResourceConfig, containerN
 
 	// Setup cgroups for container process
 	log.Infof("CGroup configuring ...")
-	cgroupManager := cgroups.NewCgroupManager("mydocker")
-	cgroupManager.Set(res)
-	cgroupManager.Apply(parent.Process.Pid)
+	cgroupManager := cgroups.NewCgroupManager(config.ID)
+	cgroupManager.Set(config.Resource)
+	cgroupManager.Apply(containerPid)
 	log.Info("Done.")
+
+	// Config container network
+	if config.Network != "" {
+		network.Init()
+		if err := network.Connect(config.Network, runtimeInfo); err != nil {
+			log.Errorf("%v", err)
+			return
+		}
+	}
 
 	// Pass commands to container process via os.Pipe
 	// "stress --vm-bytes 200m --vm-keep -m 1" -> pipe -> container
-	sendInitCommand(comArray, writePipe)
+	sendInitCommand(config.CmdArray, writePipe)
 
-	if tty {
-		// Waits for the `parent` command to exit and waits for any copying
+	if config.TTY {
+		// Waits for the `containerProcess` command to exit and waits for any copying
 		// from stdout or stderr to complete.
-		// Also, `Wait` releases any resources assoicated with the `parent`
-		parent.Wait()
+		// Also, `Wait` releases any resources assoicated with the `containerProcess`
+		containerProcess.Wait()
 
 		// Tear down
-		deleteContainerInfo(containerName)
-		container.DeleteWorkSpace(volume, containerName)
+		deleteContainerInfo(config.Name)
+		container.DeleteWorkSpace(config.Volume, config.Name)
 		syscall.Mount("proc", "/proc", "proc",
 			uintptr(syscall.MS_NOEXEC|syscall.MS_NOSUID|syscall.MS_NODEV), "")
 		log.Infof("$ mount proc proc /proc")
@@ -82,33 +92,33 @@ func Run(tty bool, comArray []string, res *subsystems.ResourceConfig, containerN
 	}
 }
 
-func recordContainerInfo(containerPID int, commandArray []string, containerName string) (string, error) {
-	id := randStringBytes(10)
-	createTime := time.Now().Format("2006-01-02 15:04:05")
-	command := strings.Join(commandArray, "")
-	if containerName == "" {
-		containerName = id
-	}
+func makeContainerInfo(pid int, config *container.ContainerConfig) *container.ContainerInfo {
 	containerInfo := &container.ContainerInfo{
-		Id:          id,
-		Pid:         strconv.Itoa(containerPID),
-		Command:     command,
-		CreatedTime: createTime,
+		Id:          config.ID,
+		Name:        config.Name,
+		Volume:      config.Volume,
+		Pid:         strconv.Itoa(pid),
+		Command:     strings.Join(config.CmdArray, ""),
+		CreatedTime: time.Now().Format("2006-01-02 15:04:05"),
 		Status:      container.RUNNING,
-		Name:        containerName,
+		PortMapping: config.PortMapping,
 	}
 
+	return containerInfo
+}
+
+func recordContainerInfo(containerInfo *container.ContainerInfo) error {
 	jsonBytes, err := json.Marshal(containerInfo)
 	if err != nil {
 		log.Errorf("Record container info error %v", err)
-		return "", err
+		return err
 	}
 	jsonStr := string(jsonBytes)
 
-	dirUrl := fmt.Sprintf(container.DefaultInfoLocation, containerName)
+	dirUrl := fmt.Sprintf(container.DefaultInfoLocation, containerInfo.Name)
 	if err := os.MkdirAll(dirUrl, 0622); err != nil {
 		log.Errorf("Mkdir error %s error %v", dirUrl, err)
-		return "", err
+		return err
 	} else {
 		log.Infof("$ mkdir -p %s -m 0622", dirUrl)
 	}
@@ -117,16 +127,16 @@ func recordContainerInfo(containerPID int, commandArray []string, containerName 
 	defer file.Close()
 	if err != nil {
 		log.Errorf("Create file %s error %v", fileName, err)
-		return "", err
+		return err
 	}
 	if _, err := file.WriteString(jsonStr); err != nil {
 		log.Errorf("File write string error %v", err)
-		return "", err
+		return err
 	} else {
 		log.Infof("$ echo {\"id\":\"%s\", ...} > %s", containerInfo.Id, fileName)
 	}
 
-	return containerName, nil
+	return nil
 }
 
 func deleteContainerInfo(containerId string) {
@@ -141,14 +151,4 @@ func sendInitCommand(comArray []string, writePipe *os.File) {
 	log.Infof("Send: [%s] -> pipe", command)
 	writePipe.WriteString(command)
 	writePipe.Close()
-}
-
-func randStringBytes(n int) string {
-	letterBytes := "1234567890"
-	rand.Seed(time.Now().UnixNano())
-	b := make([]byte, n)
-	for i := range b {
-		b[i] = letterBytes[rand.Intn(len(letterBytes))]
-	}
-	return string(b)
 }

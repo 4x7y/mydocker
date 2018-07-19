@@ -8,28 +8,6 @@ import (
 	"syscall"
 )
 
-var (
-	RUNNING             string = "running"
-	STOP                string = "stopped"
-	Exit                string = "exited"
-	DefaultInfoLocation string = "/var/run/mydocker/%s/"
-	ConfigName          string = "config.json"
-	ContainerLogFile    string = "container.log"
-	RootUrl             string = "/root"
-	MntUrl              string = "/root/mnt/%s"
-	WriteLayerUrl       string = "/root/writeLayer/%s"
-)
-
-type ContainerInfo struct {
-	Pid         string `json:"pid"`        // Conainter init process PID on host sys
-	Id          string `json:"id"`         // Container ID
-	Name        string `json:"name"`       // Container name
-	Command     string `json:"command"`    // Command to be executed by init action
-	CreatedTime string `json:"createTime"` // Create time
-	Status      string `json:"status"`     // Container status
-	Volume      string `json:"volume"`     // Container volume
-}
-
 // create namespace isolated process os.exec.Cmd struct
 // type Cmd struct {
 //   Path			string
