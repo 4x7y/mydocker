@@ -2,16 +2,19 @@ package nsenter
 
 /*
 #include <errno.h>
-#include <sched.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <fcntl.h>
+#include <fcntl.h>  // for open
+#include <unistd.h> // for close
+
+int setns(int fd, int nstype);
+
+#define _GNU_SOURCE
+#include <sched.h>
 
 
-// __attribute__((constructor)) means that once this pacakage is invoked,
-// the modified function will be called automatically, working like C++
-// class constructor
+
 __attribute__((constructor)) void enter_namespace(void) {
 	char *mydocker_pid;
 	mydocker_pid = getenv("mydocker_pid");
@@ -21,7 +24,6 @@ __attribute__((constructor)) void enter_namespace(void) {
 		fprintf(stdout, "missing mydocker_pid env skip nsenter");
 		return;
 	}
-
 	char *mydocker_cmd;
 	mydocker_cmd = getenv("mydocker_cmd");
 	if (mydocker_cmd) {
@@ -30,6 +32,18 @@ __attribute__((constructor)) void enter_namespace(void) {
 		fprintf(stdout, "missing mydocker_cmd env skip nsenter");
 		return;
 	}
+
+	// int setns(int fd, int nstype);
+	//
+	// Given a file descriptor referring to a namespace, reassociate the
+	// calling thread with that namespace.
+	//
+	// The fd argument is a file descriptor referring to one of the
+	// namespace entries in a /proc/[pid]/ns/ directory; see namespaces(7)
+	// for further information on /proc/[pid]/ns/.  The calling thread will
+	// be reassociated with the corresponding namespace, subject to any
+	// constraints imposed by the nstype argument.
+
 	int i;
 	char nspath[1024];
 	char *namespaces[] = { "ipc", "uts", "net", "pid", "mnt" };
@@ -45,10 +59,25 @@ __attribute__((constructor)) void enter_namespace(void) {
 		}
 		close(fd);
 	}
+
+	// The system() library function uses fork(2) to create a child process
+	// that executes the shell command specified in command using execl(3)
+	// as follows:
+	//
+	//     execl("/bin/sh", "sh", "-c", command, (char *) 0);
+	//
+	// system() returns after the command has been completed.
+	//
+	// During execution of the command, SIGCHLD will be blocked, and SIGINT
+	// and SIGQUIT will be ignored, in the process that calls system()
+	// (these signals will be handled according to their defaults inside the
+	// child process that executes command).
+	//
+	// If command is NULL, then system() returns a status indicating whether
+	// a shell is available on the system.
 	int res = system(mydocker_cmd);
 	exit(0);
 	return;
 }
 */
-
 import "C"
