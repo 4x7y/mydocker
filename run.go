@@ -56,8 +56,8 @@ func Run(tty bool, comArray []string, res *subsystems.ResourceConfig, containerN
 	cgroupManager.Set(res)
 	cgroupManager.Apply(parent.Process.Pid)
 	log.Info("Done.")
-	defer cgroupManager.Destroy()
-	defer log.Infof("CGroups destroy ...")
+	// defer cgroupManager.Destroy()
+	// defer log.Infof("CGroups destroy ...")
 
 	// Pass commands to container process via os.Pipe
 	// "stress --vm-bytes 200m --vm-keep -m 1" -> pipe -> container

@@ -18,12 +18,14 @@ var runCommand = cli.Command{
 	Name: "run",
 	Usage: `Create a container with namespace and cgroups limit,
 	-d and -ti cannot be used together
-	Examples:
+	Format:
 		mydocker run [image] [-ti/-d] [command]
 		mydocker run [image] -d --name [container name] [command]
 		mydocker run [image] --cpushare [250] --cpuset [1] -m [128m] [command]
 		mydocker run [image] -v [parent_url:container_url] [command]
-		mydocker run [image] -e [myenv:value] -ti [command]`,
+		mydocker run [image] -e [myenv:value] -ti [command]
+	Example:
+		mydocker run busybox --name demo -d --cpuset 1 -m 128m -e my_var=122 "sleep 2"`,
 	Flags: []cli.Flag{
 		cli.BoolFlag{
 			Name:  "ti",
@@ -101,6 +103,8 @@ var runCommand = cli.Command{
 		// new container process execute `initCommand` after start
 
 		Run(ttyEnable, cmdArray, resConf, containerName, volumePaths, imageName, envSlice)
+
+		log.Info("Exit.")
 		return nil
 	},
 }
