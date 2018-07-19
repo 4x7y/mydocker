@@ -14,7 +14,7 @@ type CpusetSubSystem struct {
 
 func (s *CpusetSubSystem) Set(cgroupPath string, res *ResourceConfig) error {
 	if subsysCgroupPath, err := GetCgroupPath(s.Name(), cgroupPath, true); err == nil {
-		log.Infof("CpusetSubSystem CGroup Path: %s", subsysCgroupPath)
+		// log.Infof("CpusetSubSystem CGroup Path: %s", subsysCgroupPath)
 		if res.CpuSet != "" {
 			if err := ioutil.WriteFile(path.Join(subsysCgroupPath, "cpuset.cpus"), []byte(res.CpuSet), 0644); err != nil {
 				return fmt.Errorf("set cgroup cpuset fail %v", err)
@@ -41,6 +41,8 @@ func (s *CpusetSubSystem) Apply(cgroupPath string, pid int) error {
 	if subsysCgroupPath, err := GetCgroupPath(s.Name(), cgroupPath, false); err == nil {
 		if err := ioutil.WriteFile(path.Join(subsysCgroupPath, "tasks"), []byte(strconv.Itoa(pid)), 0644); err != nil {
 			return fmt.Errorf("set cgroup proc fail %v", err)
+		} else {
+			log.Infof("$ echo %d > %s", pid, subsysCgroupPath+"/tasks")
 		}
 		return nil
 	} else {

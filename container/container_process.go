@@ -102,6 +102,7 @@ func NewParentProcess(tty bool, containerName, volume, imageName string, envSlic
 		}
 
 		cmd.Stdout = stdLogFile
+		cmd.Stderr = stdLogFile
 		log.Infof("Container.Stdout > container.logfile")
 	}
 

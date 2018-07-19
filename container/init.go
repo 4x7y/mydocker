@@ -20,11 +20,13 @@ func RunContainerInitProcess() error {
 	log.Infof("Setup filesystem mount point")
 	setUpMount()
 
+	// Read user commands from pipe
 	cmdArray := readUserCommand()
 	if cmdArray == nil || len(cmdArray) == 0 {
 		return fmt.Errorf("Run container get user command error, cmdArray is nil")
 	}
 	log.Infof("Get: pipe -> %v", cmdArray)
+
 	// Since syscall.execve require absolute path of command, here we
 	// find command absolute path in system PATH env using exec.LookPath
 	// Example: fish -> /usr/bin/fish

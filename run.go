@@ -56,8 +56,6 @@ func Run(tty bool, comArray []string, res *subsystems.ResourceConfig, containerN
 	cgroupManager.Set(res)
 	cgroupManager.Apply(parent.Process.Pid)
 	log.Info("Done.")
-	// defer cgroupManager.Destroy()
-	// defer log.Infof("CGroups destroy ...")
 
 	// Pass commands to container process via os.Pipe
 	// "stress --vm-bytes 200m --vm-keep -m 1" -> pipe -> container
@@ -75,6 +73,12 @@ func Run(tty bool, comArray []string, res *subsystems.ResourceConfig, containerN
 		syscall.Mount("proc", "/proc", "proc",
 			uintptr(syscall.MS_NOEXEC|syscall.MS_NOSUID|syscall.MS_NODEV), "")
 		log.Infof("$ mount proc proc /proc")
+
+		log.Infof("CGroups destroy ...")
+		cgroupManager.Destroy()
+		log.Infof("Done.")
+	} else {
+		log.Infof("Enter detach mode ...")
 	}
 }
 
