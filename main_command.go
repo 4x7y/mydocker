@@ -18,10 +18,12 @@ var runCommand = cli.Command{
 	Name: "run",
 	Usage: `Create a container with namespace and cgroups limit,
 	-d and -ti cannot be used together
-		mydocker run -ti [command]
-		mydocker run -d --name [container name] [command]
-		mydocker run --cpushare [250] --cpuset [1] -m [128m] [command]
-		mydocker run -v [parent_url:container_url] [command]`,
+	Examples:
+		mydocker run [image] [-ti/-d] [command]
+		mydocker run [image] -d --name [container name] [command]
+		mydocker run [image] --cpushare [250] --cpuset [1] -m [128m] [command]
+		mydocker run [image] -v [parent_url:container_url] [command]
+		mydocker run [image] -e [myenv:value] -ti [command]`,
 	Flags: []cli.Flag{
 		cli.BoolFlag{
 			Name:  "ti",

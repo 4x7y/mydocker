@@ -50,9 +50,10 @@ func getContainerInfo(file os.FileInfo) (*container.ContainerInfo, error) {
 	containerName := file.Name()
 	configFileDir := fmt.Sprintf(container.DefaultInfoLocation, containerName)
 	configFileDir = configFileDir + container.ConfigName
+	log.Infof("Read config file %s%s", configFileDir, container.ConfigName)
 	content, err := ioutil.ReadFile(configFileDir)
 	if err != nil {
-		log.Errorf("Read file %s error %v", configFileDir, err)
+		log.Errorf("%v", err)
 		return nil, err
 	}
 	var containerInfo container.ContainerInfo

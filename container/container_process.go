@@ -102,7 +102,7 @@ func NewParentProcess(tty bool, containerName, volume, imageName string, envSlic
 		}
 
 		cmd.Stdout = stdLogFile
-		log.Infof("cmd.stdout > container.logfile")
+		log.Infof("Container.Stdout > container.logfile")
 	}
 
 	log.Infof("Container.NSFlag: UTS|PID|NS(MNT)|NET|IPC")
