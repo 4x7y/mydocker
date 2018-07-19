@@ -17,16 +17,14 @@ import (
 
 // func Run(tty bool, comArray []string, res *subsystems.ResourceConfig) {
 
-func Run(tty bool, comArray []string, volume string, res *subsystems.ResourceConfig, containerName string) {
+func Run(tty bool, comArray []string, res *subsystems.ResourceConfig, containerName, volume, imageName string, envSlice []string) {
 	// Refer to source code container_process.go
 	// `parent` is a `Cmd` struct which contains exe path, args, etc.
 	// Commands that going to be executed by the new child process
 	// is now passed through a pipe.
 
 	log.Infof("Prepare container process ...")
-	mntURL := "/root/mnt"
-	rootURL := "/root"
-	parent, writePipe := container.NewParentProcess(tty, volume, rootURL, mntURL, containerName)
+	parent, writePipe := container.NewParentProcess(tty, containerName, volume, imageName, envSlice)
 	if parent == nil {
 		log.Errorf("New parent process error")
 		return
@@ -72,13 +70,11 @@ func Run(tty bool, comArray []string, volume string, res *subsystems.ResourceCon
 		parent.Wait()
 
 		// Tear down
-		container.DeleteWorkSpace(rootURL, mntURL, volume)
+		deleteContainerInfo(containerName)
+		container.DeleteWorkSpace(volume, containerName)
 		syscall.Mount("proc", "/proc", "proc",
 			uintptr(syscall.MS_NOEXEC|syscall.MS_NOSUID|syscall.MS_NODEV), "")
 		log.Infof("$ mount proc proc /proc")
-
-		// Container management
-		deleteContainerInfo(containerName)
 	}
 }
 

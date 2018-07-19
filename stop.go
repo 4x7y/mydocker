@@ -6,16 +6,21 @@ import (
 	"fmt"
 	log "github.com/sirupsen/logrus"
 	"io/ioutil"
+	"os"
 	"strconv"
 	"syscall"
 )
 
 func stopContainer(containerName string) {
+	dirURL := fmt.Sprintf(container.DefaultInfoLocation, containerName)
+	configFilePath := dirURL + container.ConfigName
 	pid, err := getContainerPidByName(containerName)
 	if err != nil {
 		log.Errorf("Get contaienr pid by name %s error %v", containerName, err)
 		return
 	}
+	log.Infof("$ cat %s = {\"pid\":\"%s\", ...}", configFilePath, pid)
+
 	pidInt, err := strconv.Atoi(pid)
 	if err != nil {
 		log.Errorf("Conver pid from string to int error %v", err)
@@ -24,7 +29,10 @@ func stopContainer(containerName string) {
 	if err := syscall.Kill(pidInt, syscall.SIGTERM); err != nil {
 		log.Errorf("Stop container %s error %v", containerName, err)
 		return
+	} else {
+		log.Infof("$ kill --signal TERM %d", pidInt)
 	}
+
 	containerInfo, err := getContainerInfoByName(containerName)
 	if err != nil {
 		log.Errorf("Get container %s info error %v", containerName, err)
@@ -37,11 +45,11 @@ func stopContainer(containerName string) {
 		log.Errorf("Json marshal %s error %v", containerName, err)
 		return
 	}
-	dirURL := fmt.Sprintf(container.DefaultInfoLocation, containerName)
-	configFilePath := dirURL + container.ConfigName
 	if err := ioutil.WriteFile(configFilePath, newContentBytes, 0622); err != nil {
 		log.Errorf("Write file %s error", configFilePath, err)
 	}
+
+	log.Infof("$ echo {\"pid\":\"%s\", ...} > %s", containerInfo.Pid, configFilePath)
 }
 
 func getContainerInfoByName(containerName string) (*container.ContainerInfo, error) {
@@ -58,4 +66,22 @@ func getContainerInfoByName(containerName string) (*container.ContainerInfo, err
 		return nil, err
 	}
 	return &containerInfo, nil
+}
+
+func removeContainer(containerName string) {
+	containerInfo, err := getContainerInfoByName(containerName)
+	if err != nil {
+		log.Errorf("Get container %s info error %v", containerName, err)
+		return
+	}
+	if containerInfo.Status != container.STOP {
+		log.Errorf("Couldn't remove running container")
+		return
+	}
+	dirURL := fmt.Sprintf(container.DefaultInfoLocation, containerName)
+	if err := os.RemoveAll(dirURL); err != nil {
+		log.Errorf("Remove file %s error %v", dirURL, err)
+		return
+	}
+	container.DeleteWorkSpace(containerInfo.Volume, containerName)
 }

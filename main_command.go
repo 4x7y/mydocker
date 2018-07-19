@@ -51,6 +51,10 @@ var runCommand = cli.Command{
 			Name:  "name",
 			Usage: "container name",
 		},
+		cli.StringSliceFlag{
+			Name:  "e",
+			Usage: "set environment",
+		},
 	},
 
 	// 1. check if parameters include `command`
@@ -67,6 +71,9 @@ var runCommand = cli.Command{
 		for _, arg := range context.Args() {
 			cmdArray = append(cmdArray, arg)
 		}
+		//get image name
+		imageName := cmdArray[0]
+		cmdArray = cmdArray[1:]
 
 		// Handle arguments
 		ttyEnable := context.Bool("ti")
@@ -81,16 +88,17 @@ var runCommand = cli.Command{
 			CpuShare:    context.String("cpushare"),
 		}
 		volumePaths := context.String("v")
+		envSlice := context.StringSlice("e")
 		containerName := context.String("name")
 
-		log.Infof("Run a new process (tty=%v cmdArray=%v resConf=%v)",
-			ttyEnable, cmdArray, resConf)
+		log.Infof("Container config = {tty=%v, cmdArray=%v ...}",
+			ttyEnable, cmdArray)
 		// Refer to file: run.go
 		// Wait here until `cmd` exit
 		// The `NewParentProcess` invoked in `Run` promise
 		// new container process execute `initCommand` after start
-		Run(ttyEnable, cmdArray, volumePaths, resConf, containerName)
 
+		Run(ttyEnable, cmdArray, resConf, containerName, volumePaths, imageName, envSlice)
 		return nil
 	},
 }
@@ -188,6 +196,20 @@ var stopCommand = cli.Command{
 		}
 		containerName := context.Args().Get(0)
 		stopContainer(containerName)
+		return nil
+	},
+}
+
+var removeCommand = cli.Command{
+	Name: "rm",
+	Usage: `remove unused container
+		mydocker rm [container name]`,
+	Action: func(context *cli.Context) error {
+		if len(context.Args()) < 1 {
+			return fmt.Errorf("Missing container name")
+		}
+		containerName := context.Args().Get(0)
+		removeContainer(containerName)
 		return nil
 	},
 }
