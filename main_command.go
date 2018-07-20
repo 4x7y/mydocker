@@ -90,7 +90,7 @@ var runCommand = cli.Command{
 			Pipe:        nil,
 			ImageName:   cmdArray[0],
 			CmdArray:    cmdArray[1:],
-			Network:     context.String("net"),
+			NetworkName: context.String("net"),
 			PortMapping: context.StringSlice("p"),
 			Resource: &subsystems.ResourceConfig{
 				MemoryLimit: context.String("m"),
@@ -231,7 +231,9 @@ var networkCommand = cli.Command{
 	Usage: `container network commands
 		mydocker network create [network name] --driver [driver] --subnet [subnet]
 		mydocker network list
-		mydocker network remove [network name]`,
+		mydocker network remove [network name]
+	Example:
+		mydocker network create testnet --subnet 192.168.0.0/24 --driver bridge`,
 	Subcommands: []cli.Command{
 		{
 			Name:  "create",
@@ -251,7 +253,7 @@ var networkCommand = cli.Command{
 				if len(context.Args()) < 1 {
 					return fmt.Errorf("Missing network name")
 				}
-				network.Init()
+				network.LoadExistNetwork()
 				err := network.CreateNetwork(context.String("driver"), context.String("subnet"), context.Args()[0])
 				if err != nil {
 					return err
@@ -263,7 +265,7 @@ var networkCommand = cli.Command{
 			Name:  "list",
 			Usage: "list container network",
 			Action: func(context *cli.Context) error {
-				network.Init()
+				network.LoadExistNetwork()
 				network.ListNetwork()
 				return nil
 			},
@@ -275,7 +277,7 @@ var networkCommand = cli.Command{
 				if len(context.Args()) < 1 {
 					return fmt.Errorf("Missing network name")
 				}
-				network.Init()
+				network.LoadExistNetwork()
 				err := network.DeleteNetwork(context.Args()[0])
 				if err != nil {
 					return err

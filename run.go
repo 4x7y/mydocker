@@ -14,8 +14,6 @@ import (
 	"time"
 )
 
-// func Run(tty bool, comArray []string, res *subsystems.ResourceConfig) {
-
 func Run(config *container.ContainerConfig) {
 	// Refer to source code container_process.go
 	// `containerProcess` is a `Cmd` struct which contains exe path, args, etc.
@@ -58,10 +56,10 @@ func Run(config *container.ContainerConfig) {
 	cgroupManager.Apply(containerPid)
 	log.Info("Done.")
 
-	// Config container network
-	if config.Network != "" {
-		network.Init()
-		if err := network.Connect(config.Network, runtimeInfo); err != nil {
+	// Config container network, try connecting to config.NetworkName
+	if config.NetworkName != "" {
+		network.LoadExistNetwork()
+		if err := network.Connect(config.NetworkName, runtimeInfo); err != nil {
 			log.Errorf("%v", err)
 			return
 		}
@@ -71,6 +69,7 @@ func Run(config *container.ContainerConfig) {
 	// "stress --vm-bytes 200m --vm-keep -m 1" -> pipe -> container
 	sendInitCommand(config.CmdArray, writePipe)
 
+	// Waite for container process exit or isolate container if detach mode specified
 	if config.TTY {
 		// Waits for the `containerProcess` command to exit and waits for any copying
 		// from stdout or stderr to complete.

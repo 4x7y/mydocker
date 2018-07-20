@@ -33,12 +33,21 @@ type Endpoint struct {
 	PortMapping []string
 }
 
+// A network is a set of containers that can communicate with
+// each other. Network contains network configurations including
+// network ipnet address, network driver, etc.
 type Network struct {
 	Name    string
 	IpRange *net.IPNet
 	Driver  string
 }
 
+// Network driver is a component of a Network
+// Network drivers have different strategies to create, connect,
+// disconnect and delete a network.
+// When create a network, we can specify a network driver to
+// define the network behavior.
+// Here we define the network driver interface:
 type NetworkDriver interface {
 	Name() string
 	Create(subnet string, name string) (*Network, error)
@@ -110,23 +119,26 @@ func (nw *Network) load(dumpPath string) error {
 	return nil
 }
 
-func Init() error {
+func LoadExistNetwork() error {
 	var bridgeDriver = BridgeNetworkDriver{}
 	drivers[bridgeDriver.Name()] = &bridgeDriver
+	log.Infof("Load \"bridge\" network driver as default.")
 
 	if _, err := os.Stat(defaultNetworkPath); err != nil {
 		if os.IsNotExist(err) {
 			os.MkdirAll(defaultNetworkPath, 0644)
+			log.Infof("mkdir %s -m 0644", defaultNetworkPath)
 		} else {
 			return err
 		}
 	}
 
 	filepath.Walk(defaultNetworkPath, func(nwPath string, info os.FileInfo, err error) error {
+		// HasSuffix tests whether the string nwPath ends with "/"
 		if strings.HasSuffix(nwPath, "/") {
 			return nil
 		}
-		_, nwName := path.Split(nwPath)
+		_, nwName := path.Split(nwPath) // Separating into a dir and file name
 		nw := &Network{
 			Name: nwName,
 		}
@@ -134,6 +146,7 @@ func Init() error {
 		if err := nw.load(nwPath); err != nil {
 			log.Errorf("error load network: %s", err)
 		}
+		log.Infof("Find network: %s", nwName)
 
 		networks[nwName] = nw
 		return nil
@@ -145,12 +158,20 @@ func Init() error {
 }
 
 func CreateNetwork(driver, subnet, name string) error {
+	// "192.0.2.1/24" -> (192.0.2.1, 192.0.2.0/24).
 	_, cidr, _ := net.ParseCIDR(subnet)
 	ip, err := ipAllocator.Allocate(cidr)
 	if err != nil {
 		return err
 	}
 	cidr.IP = ip
+
+	// cidr is-a IPNet {
+	//	 IP   IP      // network number
+	//	 Mask IPMask  // network mask
+	// }
+	//
+	// For example, cidr = 192.0.2.1/24
 
 	nw, err := drivers[driver].Create(cidr.String(), name)
 	if err != nil {
@@ -289,13 +310,13 @@ func Connect(networkName string, cinfo *container.ContainerInfo) error {
 		return fmt.Errorf("No Such Network: %s", networkName)
 	}
 
-	// 分配容器IP地址
+	// Allocate container IP address
 	ip, err := ipAllocator.Allocate(network.IpRange)
 	if err != nil {
 		return err
 	}
 
-	// 创建网络端点
+	// Create network endpoint
 	ep := &Endpoint{
 		ID:          fmt.Sprintf("%s-%s", cinfo.Id, networkName),
 		IPAddress:   ip,

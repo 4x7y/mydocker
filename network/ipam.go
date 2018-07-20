@@ -44,6 +44,8 @@ func (ipam *IPAM) load() error {
 		log.Errorf("Error dump allocation info, %v", err)
 		return err
 	}
+	//{\"%s\":\"%s\", ...}
+	log.Infof("$ open %s = %s...%s", ipam.SubnetAllocatorPath, subnetJson[:23], subnetJson[n-5:n])
 	return nil
 }
 
@@ -79,7 +81,8 @@ func (ipam *IPAM) Allocate(subnet *net.IPNet) (ip net.IP, err error) {
 	// 存放网段中地址分配信息的数组
 	ipam.Subnets = &map[string]string{}
 
-	// 从文件中加载已经分配的网段信息
+	// Load network segment info from file `ipamDefaultAllocatorPath`
+	// .../ipam/subnet.json = {"192.168.0.0/24":"1111111...0000"} > ipam.Subnets
 	err = ipam.load()
 	if err != nil {
 		log.Errorf("Error dump allocation info, %v", err)

@@ -23,7 +23,7 @@ type ContainerConfig struct {
 	Volume      string
 	ImageName   string
 	Env         []string
-	Network     string
+	NetworkName string
 	PortMapping []string
 	Pipe        *os.File
 	CmdArray    []string
