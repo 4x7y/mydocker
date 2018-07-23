@@ -60,6 +60,7 @@ func (nw *Network) dump(dumpPath string) error {
 	if _, err := os.Stat(dumpPath); err != nil {
 		if os.IsNotExist(err) {
 			os.MkdirAll(dumpPath, 0644)
+			log.Infof("$ mkdir -p %s -m 0644", dumpPath)
 		} else {
 			return err
 		}
@@ -79,6 +80,7 @@ func (nw *Network) dump(dumpPath string) error {
 		return err
 	}
 
+	log.Infof("$ echo %v > %s", *nw, dumpPath)
 	_, err = nwFile.Write(nwJson)
 	if err != nil {
 		log.Errorf("error：", err)
@@ -95,6 +97,7 @@ func (nw *Network) remove(dumpPath string) error {
 			return err
 		}
 	} else {
+		log.Infof("$ rm -rf %s", path.Join(dumpPath, nw.Name))
 		return os.Remove(path.Join(dumpPath, nw.Name))
 	}
 }
@@ -111,6 +114,7 @@ func (nw *Network) load(dumpPath string) error {
 		return err
 	}
 
+	log.Infof("$ open %s = %s ...", dumpPath, nwJson[:20])
 	err = json.Unmarshal(nwJson[:n], nw)
 	if err != nil {
 		log.Errorf("Error load nw info", err)
@@ -133,6 +137,7 @@ func LoadExistNetwork() error {
 		}
 	}
 
+	log.Infof("Walk through default network path %s.", defaultNetworkPath)
 	filepath.Walk(defaultNetworkPath, func(nwPath string, info os.FileInfo, err error) error {
 		// HasSuffix tests whether the string nwPath ends with "/"
 		if strings.HasSuffix(nwPath, "/") {
@@ -140,13 +145,13 @@ func LoadExistNetwork() error {
 		}
 		_, nwName := path.Split(nwPath) // Separating into a dir and file name
 		nw := &Network{
-			Name: nwName,
+			Name: nwName, // same to the filename
 		}
 
+		log.Infof("Load network: %s", nwName)
 		if err := nw.load(nwPath); err != nil {
 			log.Errorf("error load network: %s", err)
 		}
-		log.Infof("Find network: %s", nwName)
 
 		networks[nwName] = nw
 		return nil
@@ -172,7 +177,7 @@ func CreateNetwork(driver, subnet, name string) error {
 	// }
 	//
 	// For example, cidr = 192.0.2.1/24
-
+	log.Infof("Allocated IP: %s", cidr.IP)
 	nw, err := drivers[driver].Create(cidr.String(), name)
 	if err != nil {
 		return err
@@ -182,6 +187,7 @@ func CreateNetwork(driver, subnet, name string) error {
 }
 
 func ListNetwork() {
+	// NewWriter(output, minwidth, tabwidth, padding, padchar, flags)
 	w := tabwriter.NewWriter(os.Stdout, 12, 1, 3, ' ', 0)
 	fmt.Fprint(w, "NAME\tIpRange\tDriver\n")
 	for _, nw := range networks {
@@ -215,30 +221,42 @@ func DeleteNetwork(networkName string) error {
 }
 
 func enterContainerNetns(enLink *netlink.Link, cinfo *container.ContainerInfo) func() {
+	log.Infof("Enter container %s network namespace ...", cinfo.Pid)
+
 	f, err := os.OpenFile(fmt.Sprintf("/proc/%s/ns/net", cinfo.Pid), os.O_RDONLY, 0)
 	if err != nil {
 		log.Errorf("error get container net namespace, %v", err)
 	}
+	log.Infof("$ open %s", fmt.Sprintf("/proc/%s/ns/net", cinfo.Pid))
 
+	// Network namespace file descriptor of container process
 	nsFD := f.Fd()
 	runtime.LockOSThread()
 
 	// 修改veth peer 另外一端移到容器的namespace中
+	// Puts the device into a new network namespace. The `fd` must be an open file
+	// descriptor to a network namespace.
 	if err = netlink.LinkSetNsFd(*enLink, int(nsFD)); err != nil {
 		log.Errorf("error set link netns , %v", err)
 	}
+	log.Infof("// Puts the device %v into container network namespace", (*enLink).Attrs().Name)
+	log.Infof("$ ip link set dev %v netns %d", (*enLink).Attrs().Name, int(nsFD))
 
 	// 获取当前的网络namespace
+	// Gets a handle to the current threads network namespace. (NsHandle)
 	origns, err := netns.Get()
 	if err != nil {
 		log.Errorf("error get current netns, %v", err)
 	}
 
 	// 设置当前进程到新的网络namespace，并在函数执行完成之后再恢复到之前的namespace
+	// Sets the current network namespace to the namespace represented by NsHandle
 	if err = netns.Set(netns.NsHandle(nsFD)); err != nil {
 		log.Errorf("error set netns, %v", err)
 	}
+
 	return func() {
+		// Teardown
 		netns.Set(origns)
 		origns.Close()
 		runtime.UnlockOSThread()
@@ -247,39 +265,50 @@ func enterContainerNetns(enLink *netlink.Link, cinfo *container.ContainerInfo) f
 }
 
 func configEndpointIpAddressAndRoute(ep *Endpoint, cinfo *container.ContainerInfo) error {
+	log.Infof("Config endpoint ip address and route ...")
+
 	peerLink, err := netlink.LinkByName(ep.Device.PeerName)
 	if err != nil {
 		return fmt.Errorf("fail config endpoint: %v", err)
 	}
 
+	// Enter container network namespace and put veth peer device to it
 	defer enterContainerNetns(&peerLink, cinfo)()
 
+	// Get container ip address and ip segment, so as to config the container interface
+	// For example, if contianer ip is 192.168.1.2, the subnet is 192.168.1.0/24
+	// then the resulting ip address is 192.168.1.2/24
 	interfaceIP := *ep.Network.IpRange
 	interfaceIP.IP = ep.IPAddress
 
+	// Setup device ip inside the container namespace
 	if err = setInterfaceIP(ep.Device.PeerName, interfaceIP.String()); err != nil {
 		return fmt.Errorf("%v,%s", ep.Network, err)
 	}
 
+	// Start up that veth endpoint
 	if err = setInterfaceUP(ep.Device.PeerName); err != nil {
 		return err
 	}
 
+	// In the net namespace, local address 127.0.0.0 device lo is turned off as default
+	// Here we start it up so that the container can access itself
 	if err = setInterfaceUP("lo"); err != nil {
 		return err
 	}
 
+	// Let all outgoing requests accessed through veth endpoint
+	// 0.0.0.0/0 represents all ip address
 	_, cidr, _ := net.ParseCIDR("0.0.0.0/0")
-
 	defaultRoute := &netlink.Route{
 		LinkIndex: peerLink.Attrs().Index,
 		Gw:        ep.Network.IpRange.IP,
 		Dst:       cidr,
 	}
-
 	if err = netlink.RouteAdd(defaultRoute); err != nil {
 		return err
 	}
+	log.Infof("$ ip route add -net 0.0.0.0/0 gw %v dev %v", defaultRoute.Gw, defaultRoute.LinkIndex)
 
 	return nil
 }
@@ -294,6 +323,8 @@ func configPortMapping(ep *Endpoint, cinfo *container.ContainerInfo) error {
 		iptablesCmd := fmt.Sprintf("-t nat -A PREROUTING -p tcp -m tcp --dport %s -j DNAT --to-destination %s:%s",
 			portMapping[0], ep.IPAddress.String(), portMapping[1])
 		cmd := exec.Command("iptables", strings.Split(iptablesCmd, " ")...)
+		log.Infof("$ iptables %s", iptablesCmd)
+
 		//err := cmd.Run()
 		output, err := cmd.Output()
 		if err != nil {
@@ -315,6 +346,7 @@ func Connect(networkName string, cinfo *container.ContainerInfo) error {
 	if err != nil {
 		return err
 	}
+	log.Infof("Allocated IP: %s", ip)
 
 	// Create network endpoint
 	ep := &Endpoint{
@@ -323,7 +355,7 @@ func Connect(networkName string, cinfo *container.ContainerInfo) error {
 		Network:     network,
 		PortMapping: cinfo.PortMapping,
 	}
-	// 调用网络驱动挂载和配置网络端点
+	// Invoke network driver connect and setup endpoint
 	if err = drivers[network.Driver].Connect(network, ep); err != nil {
 		return err
 	}

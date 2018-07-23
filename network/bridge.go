@@ -40,18 +40,23 @@ func (d *BridgeNetworkDriver) Delete(network Network) error {
 	if err != nil {
 		return err
 	}
+
+	log.Infof("$ ip link del %s", br.Attrs().Name)
 	return netlink.LinkDel(br)
 }
 
 func (d *BridgeNetworkDriver) Connect(network *Network, endpoint *Endpoint) error {
+	// Get network name, that is the Linux bridge interface name
 	bridgeName := network.Name
+	// Get Linux bridge interface object and its attributes
 	br, err := netlink.LinkByName(bridgeName)
 	if err != nil {
 		return err
 	}
 
+	// Create Veth interface attributes
 	la := netlink.NewLinkAttrs()
-	la.Name = endpoint.ID[:5]
+	la.Name = endpoint.ID[:5] // Linux network interface name limits
 	la.MasterIndex = br.Attrs().Index
 
 	endpoint.Device = netlink.Veth{
@@ -62,10 +67,13 @@ func (d *BridgeNetworkDriver) Connect(network *Network, endpoint *Endpoint) erro
 	if err = netlink.LinkAdd(&endpoint.Device); err != nil {
 		return fmt.Errorf("Error Add Endpoint Device: %v", err)
 	}
+	log.Infof("$ ip link add %s type veth peer name %s", endpoint.Device.LinkAttrs.Name, endpoint.Device.PeerName)
 
 	if err = netlink.LinkSetUp(&endpoint.Device); err != nil {
 		return fmt.Errorf("Error Add Endpoint Device: %v", err)
 	}
+	log.Infof("$ ip link set %s up", endpoint.Device.LinkAttrs.Name)
+
 	return nil
 }
 
@@ -114,6 +122,7 @@ func (d *BridgeNetworkDriver) deleteBridge(n *Network) error {
 	if err := netlink.LinkDel(l); err != nil {
 		return fmt.Errorf("Failed to remove bridge interface %s delete: %v", bridgeName, err)
 	}
+	log.Infof("$ ip link del %s", l.Attrs().Name)
 
 	return nil
 }
@@ -153,7 +162,7 @@ func setInterfaceUP(interfaceName string) error {
 	if err := netlink.LinkSetUp(iface); err != nil {
 		return fmt.Errorf("Error enabling interface for %s: %v", interfaceName, err)
 	}
-	log.Infof("// Enables the link device \"%s\"", iface.Type())
+	log.Infof("// Enables the link device \"%s\"", iface.Attrs().Name)
 	log.Infof("$ ip link set dev %s up", iface.Attrs().Name)
 	return nil
 }
@@ -183,8 +192,8 @@ func setInterfaceIP(name string, rawIP string) error {
 	// Add an IP address to a link device.
 	addr := &netlink.Addr{IPNet: ipNet, Label: "", Flags: 0, Scope: 0, Peer: nil}
 	log.Infof("// Add address %v with netmask %v to device %v",
-		addr.IPNet.IP, addr.IPNet.Mask, iface.Type())
-	log.Infof("$ ip addr add %v dev %v", addr, iface.Type())
+		addr.IPNet.IP, addr.IPNet.Mask, iface.Attrs().Name)
+	log.Infof("$ ip addr add %v dev %v", addr, iface.Attrs().Name)
 	return netlink.AddrAdd(iface, addr)
 }
 
