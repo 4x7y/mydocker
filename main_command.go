@@ -1,9 +1,9 @@
 package main
 
 import (
-	"../mydocker/cgroups/subsystems"
-	"../mydocker/container"
-	"../mydocker/network"
+	"./cgroups/subsystems"
+	"./container"
+	"./network"
 	"fmt"
 	log "github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
@@ -118,8 +118,7 @@ var runCommand = cli.Command{
 // This command is invoked by child process
 var initCommand = cli.Command{
 	Name: "init",
-	Usage: `Init container process run user's process in container. 
-	Do not call it outside`,
+	Usage: `[Do not call it] Init container process run user's process in container.`,
 
 	// 1. get passed command parameters (use pipe instead)
 	// 2. initialize container

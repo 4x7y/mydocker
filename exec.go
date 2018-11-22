@@ -1,8 +1,8 @@
 package main
 
 import (
-	"../mydocker/container"
-	_ "../mydocker/nsenter"
+	"./container"
+	_ "./nsenter"
 	"encoding/json"
 	"fmt"
 	log "github.com/sirupsen/logrus"

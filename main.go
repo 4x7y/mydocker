@@ -1,7 +1,7 @@
 package main
 
 import (
-	"../mydocker/misc"
+	"./misc"
 	"github.com/onrik/logrus/filename"
 	log "github.com/sirupsen/logrus"
 	"github.com/urfave/cli"

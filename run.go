@@ -1,9 +1,9 @@
 package main
 
 import (
-	"../mydocker/cgroups"
-	"../mydocker/container"
-	"../mydocker/network"
+	"./cgroups"
+	"./container"
+	"./network"
 	"encoding/json"
 	"fmt"
 	log "github.com/sirupsen/logrus"

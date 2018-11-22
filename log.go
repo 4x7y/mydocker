@@ -1,7 +1,7 @@
 package main
 
 import (
-	"../mydocker/container"
+	"./container"
 	"fmt"
 	log "github.com/sirupsen/logrus"
 	"io/ioutil"

@@ -1,7 +1,7 @@
 package main
 
 import (
-	"../mydocker/container"
+	"./container"
 	"encoding/json"
 	"fmt"
 	log "github.com/sirupsen/logrus"
