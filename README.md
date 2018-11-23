@@ -1,5 +1,7 @@
 # MyDocker
 
+[![Build Status](https://travis-ci.org/4x7y/mydocker.svg?branch=master)](https://travis-ci.org/4x7y/mydocker)
+
 ![mydocker](./doc/mydocker.png)
 
 
