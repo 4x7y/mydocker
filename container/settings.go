@@ -8,6 +8,7 @@ var (
 	ConfigName          string = "config.json"
 	ContainerLogFile    string = "container.log"
 	RootUrl             string = "/root"
+	ImageUrl            string = "./images"
 	MntUrl              string = "/root/mnt/%s"
 	WriteLayerUrl       string = "/root/writeLayer/%s"
 )
