@@ -4,7 +4,7 @@
 
 ## Build
 
-Requires go version go1.8 on Linux
+Requires go version 1.8+ on Linux
 
 ```bash
 cd mydocker
