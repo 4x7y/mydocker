@@ -2,10 +2,21 @@
 
 [![Build Status](https://travis-ci.org/4x7y/mydocker.svg?branch=master)](https://travis-ci.org/4x7y/mydocker)
 
+## Build
+
+Requires go version go1.8 on Linux
+
+```bash
+cd mydocker
+go get .
+go build
+```
+
+## Start Container
+
 ![mydocker](./doc/mydocker.png)
 
-
-## Container network
+## Container Network
 
 ```bash
 $ sudo ip netns add ns1
