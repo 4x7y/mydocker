@@ -1,6 +1,4 @@
-# MyDocker
-
-[![Build Status](https://travis-ci.org/4x7y/mydocker.svg?branch=master)](https://travis-ci.org/4x7y/mydocker)
+# MyDocker [![Build Status](https://travis-ci.org/4x7y/mydocker.svg?branch=master)](https://travis-ci.org/4x7y/mydocker)
 
 ## Build
 
